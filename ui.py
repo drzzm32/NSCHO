@@ -107,20 +107,38 @@ def disc(p, cx, cy, r, color):
         p.fill(cx - span, cy + dy, span * 2 + 1, 1, color)
 
 
-def level(p, cx, cy, r, pitch, roll):
-    """小球水平仪：外环 + 半环 + 十字 + 小球。
+# 上一次画小球的位置（模块级，跨帧保留）。
+# 局部重绘的关键：**球没怎么动就不重画**。水平仪一画就是上百次 fill
+# （每次 fill 都是一次独立 SPI 事务），而姿态经过低通滤波后变化很慢，
+# 静止时几乎不需要重画。代价是球的移动会有最多 BALL_STEP 像素的量化。
+BALL_STEP = 2
+_last_ball = [None, None]
 
-    球朝**下坡**滚（物理水平仪那样）：设备往右倾，球往右跑。
-    摆度满 45 度时球贴到内圈边缘。
+
+def level(p, cx, cy, r, pitch, roll, force=False):
+    """小球水平仪：外环 + 内环 + 十字 + 小球。
+
+    球朝**下坡**滚（物理水平仪那样）：设备往右倾，球往右跑。满 45 度贴内圈。
+    只有小球移动超过 BALL_STEP 像素（或 force=True）时才真正重画整块 ——
+    重画时要连背景一起填，才能把上一帧的球擦掉。
     """
-    ring(p, cx, cy, r, TRACK, 1)
-    ring(p, cx, cy, max(4, r // 2), TRACK, 1)
-    hline(p, cx - r, cx + r, cy, TRACK, 1)
-    vline(p, cx, cy - r, cy + r, TRACK, 1)
     k = min(1.0, abs(roll) / 45.0)
     bx = cx + int((1 if roll >= 0 else -1) * r * 0.78 * k)
     k = min(1.0, abs(pitch) / 45.0)
     by = cy + int((1 if pitch >= 0 else -1) * r * 0.78 * k)
+
+    lx, ly = _last_ball[0], _last_ball[1]
+    if (not force) and (lx is not None) and (abs(bx - lx) < BALL_STEP) and (abs(by - ly) < BALL_STEP):
+        return
+    _last_ball[0] = bx
+    _last_ball[1] = by
+
+    # 整块重画：先铺背景（擦掉旧球），再画环/十字，最后画球
+    p.fill(cx - r - 1, cy - r - 1, 2 * r + 3, 2 * r + 3, BG)
+    ring(p, cx, cy, r, TRACK, 1)
+    ring(p, cx, cy, max(4, r // 2), TRACK, 1)
+    hline(p, cx - r, cx + r, cy, TRACK, 1)
+    vline(p, cx, cy - r, cy + r, TRACK, 1)
     ok = abs(pitch) < 1.5 and abs(roll) < 1.5
     disc(p, bx, by, 4, BALL_OK if ok else BALL)
     disc(p, bx, by, 2, 0xFFFFFF)
@@ -254,6 +272,12 @@ def layout_c(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
 # 换方案只改这一行（三个函数签名一致，方便对比）
 LAYOUT = layout_b
 LAYOUT_NAME = "B 左右分栏"
+
+
+def reset_cache():
+    """强制下一帧重画所有缓存过的区域（切布局、开机后第一次绘制时用）。"""
+    _last_ball[0] = None
+    _last_ball[1] = None
 
 
 def draw(p, t, r, pitch, roll, uptime):
