@@ -147,8 +147,12 @@ def attitude(ax, ay, az):
     符号与 ui.level() 的小球一致：**设备往某一侧倾斜时，球朝那一侧滚**（物理水平仪）。
     真机上如果觉得方向反了，把下面两行的 atan2 参数对调即可。
     """
-    pitch = math.atan2(-ax, math.sqrt(ay * ay + az * az)) * 57.29578
-    roll = math.atan2(ay, az) * 57.29578
+    # ⚠️ 实测：芯片的 X/Y 和屏幕的左右/上下是**交叉**的 ——
+    #    设备向左倾斜时重力分量落在 Y 轴而不是 X 轴，所以这里互换。
+    #    （原公式用 ax 算 pitch、ay 算 roll，结果是"左倾→球往下跑"。）
+    #    约定：roll 正 = 右侧低 → 球往右滚；pitch 正 = 屏幕底部低 → 球往下滚。
+    pitch = math.atan2(-ay, math.sqrt(ax * ax + az * az)) * 57.29578
+    roll = math.atan2(ax, az) * 57.29578
     return pitch, roll
 
 
