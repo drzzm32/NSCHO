@@ -273,14 +273,14 @@ def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
     tc = temp_color(int(t))
     ts = fmt_temp(t)
     if _changed("temp", (ts, tc)):
-        p.fill(4, 26, 58, 26, BG)
+        p.fill(4, 30, 58, 22, BG)     # 从 y=30 起，别盖住 18..29 的「气温」标签
         p.digi(32, 40, tc, BG, ts)
 
     # 湿度
     hc = humi_color(int(r))
     hs = "%d" % int(r)
     if _changed("humi", (hs, hc)):
-        p.fill(6, 64, 50, 26, BG)
+        p.fill(6, 68, 50, 22, BG)     # 从 y=68 起，别盖住 56..67 的「湿度」标签
         p.digi(26, 78, hc, BG, hs)
 
     # 水平仪：内部自己判断小球移动
