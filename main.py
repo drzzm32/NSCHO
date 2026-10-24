@@ -265,8 +265,9 @@ def main():
 
     pitch = 0.0
     roll = 0.0
-    avg_p = Avg(ATT_WIN, 0.0)     # 姿态滑动平均窗口（复用 SHT30 那个 Avg 类）
-    avg_r = Avg(ATT_WIN, 0.0)
+    # ⚠️ 变量名不能叫 avg_r —— 那个是湿度（roll 和 humidity 撞了会让湿度显示成角度值）
+    avg_pitch = Avg(ATT_WIN, 0.0)   # 姿态滑动平均（复用 SHT30 那个 Avg 类）
+    avg_roll = Avg(ATT_WIN, 0.0)
     t_att = time.ticks_ms()
     t_sht = t_att
     t_pwr = t_att
@@ -288,10 +289,10 @@ def main():
                 mag = math.sqrt(ax * ax + ay * ay + az * az)
                 if abs(mag - 1.0) <= MOTION_G:
                     (p, rl) = attitude(ax, ay, az)
-                    avg_p.push(p)
-                    avg_r.push(rl)
-                    pitch = avg_p.value()
-                    roll = avg_r.value()
+                    avg_pitch.push(p)
+                    avg_roll.push(rl)
+                    pitch = avg_pitch.value()
+                    roll = avg_roll.value()
             except OSError:
                 pass
 
