@@ -45,6 +45,7 @@ ZH_CHARS = (
     "气温湿度"        # 两个主读数的标签
     "俯仰横滚"        # 姿态角
     "倾角"            # 姿态区标题
+    "供电"            # 左下角的电源信息（电池位实际是直流供电）
     "正常微斜倾"      # 状态词（正常 / 微斜 / 倾斜）
 )
 
@@ -246,7 +247,8 @@ def layout_a(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
 
 
 # ---------------------------------------------------------------- 方案 B：左右分栏
-def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True):
+def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True,
+             volt=None, cur=None):
     """B 左右分栏。
 
     ⚠️ 这里**没有整块铺背景**，也没有 clear()。每个会变的元素自己判断"值变了没"，
@@ -269,6 +271,10 @@ def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
         p.prt(66, 92, 0, LBL, BG, "俯仰")
         p.prt(66, 106, 0, LBL, BG, "横滚")
 
+    # 供电信息字符串。volt 单位 V、cur 单位 mA；读不到就显示 "--"
+    vs = "--.-V" if volt is None else ("%.2fV" % volt)
+    cs = "---mA" if cur is None else ("%dmA" % int(cur))
+
     # 温度（数码管）：值或颜色变了才重画
     tc = temp_color(int(t))
     ts = fmt_temp(t)
@@ -285,6 +291,16 @@ def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
 
     # 水平仪：内部自己判断小球移动
     level(p, 96, 58, 24, pitch, roll)
+
+    # 供电信息（这块板子的"电池位"实际是直流供电，所以显示输入电压/电流）
+    if _changed("pwr_lbl", True):
+        p.prt(3, 92, 0, LBL, BG, "供电")
+    if _changed("volt", vs):
+        p.fill(3, 106, 44, 8, BG)
+        p.prt(3, 106, 0, VAL, BG, vs)
+    if _changed("cur", cs):
+        p.fill(3, 116, 44, 8, BG)
+        p.prt(3, 116, 0, LBL, BG, cs)
 
     # 俯仰 / 横滚数值（右对齐，长度会变，按固定宽度擦）
     ps = "%+.1f" % pitch
@@ -322,7 +338,7 @@ LAYOUT = layout_b
 LAYOUT_NAME = "B 左右分栏"
 
 
-def draw(p, t, r, pitch, roll, uptime):
+def draw(p, t, r, pitch, roll, uptime, volt=None, cur=None):
     """画一帧。
 
     t / r        : 温度、湿度
@@ -335,4 +351,8 @@ def draw(p, t, r, pitch, roll, uptime):
     else:
         txt = fmt_uptime(uptime)
         blink = (uptime // (BLINK_MS // 2)) % 2 == 0   # 亮 BLINK_MS/2、灭 BLINK_MS/2
-    LAYOUT(p, t, r, pitch, roll, txt, blink)
+    try:
+        LAYOUT(p, t, r, pitch, roll, txt, blink, volt=volt, cur=cur)
+    except TypeError:
+        # A/C 版没有供电参数，退回原签名
+        LAYOUT(p, t, r, pitch, roll, txt, blink)

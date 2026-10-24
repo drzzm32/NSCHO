@@ -25,6 +25,14 @@ import math
 import time
 from machine import Pin, SoftI2C
 
+# nsclk 是固件里的板级模块，提供电压/电流读数。
+# 这块板子的"电池位"实际接的是直流供电，所以读出来是输入电压/电流。
+try:
+    import nsclk;
+    HAVE_NSCLK = True;
+except ImportError:
+    HAVE_NSCLK = False;
+
 import SSD1351 as OLED
 import ui
 
@@ -158,6 +166,19 @@ def attitude(ax, ay, az):
 
 
 # ---------------------------------------------------------------- SHT30
+def power_read():
+    """返回 (电压 V, 电流 mA)；读不到返回 (None, None)。
+
+    这块板子的电池位实际是直流供电，所以这个值反映输入电源。
+    """
+    if (not HAVE_NSCLK):
+        return (None, None);
+    try:
+        return (nsclk.get_bat_voltage(), nsclk.get_bat_current());
+    except Exception:
+        return (None, None);
+
+
 def sht30_read():
     """返回 (温度 C, 湿度 %)，已加原代码的偏置。"""
     iic.writeto(0x44, b"\x2C\x06")
@@ -232,6 +253,9 @@ def main():
     roll = 0.0
     t_att = time.ticks_ms()
     t_sht = t_att
+    t_pwr = t_att
+    volt = None
+    cur = None
     t_draw = t_att - DRAW_MS          # 上电立刻画一帧
 
     while True:
@@ -253,6 +277,14 @@ def main():
             except OSError:
                 pass
 
+        # 电源信息（跟着温湿度一起每秒读一次，不需要更快）
+        if time.ticks_diff(now, t_pwr) >= SHT30_MS:
+            t_pwr = now
+            (v, i) = power_read()
+            if (v is not None):
+                volt = v
+                cur = i
+
         # 温湿度：每 1 秒滑进窗口
         if time.ticks_diff(now, t_sht) >= SHT30_MS:
             t_sht = now
@@ -266,7 +298,7 @@ def main():
         # 重绘：节流
         if time.ticks_diff(now, t_draw) >= DRAW_MS:
             t_draw = now
-            ui.draw(OLED, avg_t.value(), avg_r.value(), pitch, roll, now)
+            ui.draw(OLED, avg_t.value(), avg_r.value(), pitch, roll, now, volt, cur)
 
         time.sleep_ms(5)
 
