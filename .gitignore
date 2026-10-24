@@ -1,0 +1,11 @@
+# Generated artifacts (regenerable, not tracked)
+__pycache__/
+preview/out/
+
+# Historical versions / device-side snapshots: git already records history
+bak/
+*.bak
+
+# Editor
+.vscode/
+*.swp
