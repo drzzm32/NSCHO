@@ -44,6 +44,13 @@ R_OFFSET = 11.0
 
 LIS_GAIN = 0.001        # ±2g + HR(12 位) -> 1mg/digit
 
+# 运动检测：加速度模长偏离 1g 超过这个量就算"设备在动"，此时冻结角度更新。
+# 0.08g 大约相当于 4.6 度的虚假倾角 —— 低于它就当噪声容忍，高于它明显是碰到了。
+MOTION_G = 0.08
+# 零偏标定：开机时采这么多样本取平均当作水平参考。要求这段时间设备静止且水平。
+CAL_N = 24
+CAL_MS = 25             # 24 x 25ms = 0.6 秒
+
 # ---------------------------------------------------------------- I2C
 iic = SoftI2C(scl=Pin(39), sda=Pin(40), freq=400000)
 
@@ -59,7 +66,13 @@ def lis_init():
     iic.writeto(0x18, b"\x23\x88")
 
 
-def lis_read():
+# 加速度计零偏（calibrate() 填）。便宜的加速度计有几个 mG 固定偏差，
+# 折算到角度上是 0.5~1 度的固定误差 —— 不减掉的话"水平"永远差一点。
+LIS_ZERO = (0.0, 0.0, 1.0)
+
+
+def lis_read_raw():
+    """读原始 g 值（未减零偏）。"""
     """读 12 位三轴，返回 (ax, ay, az)，单位 g。
 
     HR 模式下数据是**16 位左对齐的 12 位补码**，所以拼成 int16 后算术右移 4 位。
@@ -78,6 +91,41 @@ def lis_read():
     if az & 0x8000:
         az -= 0x10000
     return (ax >> 4) * LIS_GAIN, (ay >> 4) * LIS_GAIN, (az >> 4) * LIS_GAIN
+
+
+def lis_read():
+    """读 g 值并减掉标定出的零偏。"""
+    (x, y, z) = lis_read_raw();
+    (zx, zy, zz) = LIS_ZERO;
+    return (x - zx, y - zy, z - zz)
+
+
+def calibrate():
+    """采集静置样本作为零偏。要求调用时设备**静止且水平**。
+
+    采平均而不是取一个样本：单样本的噪声有几个 LSB，平均后小一个数量级。
+    """
+    global LIS_ZERO;
+    ax = ay = 0.0;
+    az = 1.0;
+    ok = 0;
+    for _ in range(CAL_N):
+        try:
+            (x, y, z) = lis_read_raw();
+            ax += x;
+            ay += y;
+            az += z;
+            ok += 1;
+        except OSError:
+            pass;
+        time.sleep_ms(CAL_MS);
+    if (ok < 4):
+        return False;
+    # ⚠️ 只存**相对理想值 (0, 0, 1g) 的偏差**，不能把整个向量当零偏。
+    #    否则水平时校正结果是 (0,0,0)，角度虽然还是 0，但运动检测的模长变成 0，
+    #    |0-1| = 1 > MOTION_G，会被永远判定为"在动"、角度永久冻结。
+    LIS_ZERO = (ax / ok, ay / ok, az / ok - 1.0);
+    return True;
 
 
 def attitude(ax, ay, az):
@@ -152,6 +200,11 @@ def boot():
 def main():
     boot()
     lis_init()
+    # 标定加速度计零偏：要求此时设备静止且水平（开机画面那 2 秒正好用上）
+    if (calibrate()):
+        print("[cal] 零偏", LIS_ZERO)
+    else:
+        print("[cal] 采样失败，用默认零偏")
     try:
         (t0, r0) = sht30_read()
     except OSError:
@@ -173,9 +226,14 @@ def main():
             t_att = now
             try:
                 (ax, ay, az) = lis_read()
-                (p, rl) = attitude(ax, ay, az)
-                pitch += (p - pitch) * ATT_ALPHA
-                roll += (rl - roll) * ATT_ALPHA
+                # 运动检测：模长偏离 1g 说明加速度里混了运动分量，
+                # 此时算出来的"倾角"是假的（碰桌子就会跳），直接跳过这一帧、
+                # 保持上一次的角度。
+                mag = math.sqrt(ax * ax + ay * ay + az * az)
+                if abs(mag - 1.0) <= MOTION_G:
+                    (p, rl) = attitude(ax, ay, az)
+                    pitch += (p - pitch) * ATT_ALPHA
+                    roll += (rl - roll) * ATT_ALPHA
             except OSError:
                 pass
 
