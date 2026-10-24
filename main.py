@@ -90,7 +90,12 @@ def lis_read_raw():
         ay -= 0x10000
     if az & 0x8000:
         az -= 0x10000
-    return (ax >> 4) * LIS_GAIN, (ay >> 4) * LIS_GAIN, (az >> 4) * LIS_GAIN
+    # ⚠️ 实测：设备正常摆放时读数是 (0, 0, **-1.02**) —— 这颗芯片的 Z 轴是朝下的，
+    #    和"平放时 z = +1g"的常规约定相反。所以在这里统一取反，让上层
+    #    （attitude / 运动检测 / 标定）都按 z 朝上的约定工作。
+    return (-(ax >> 4) * LIS_GAIN,
+            -(ay >> 4) * LIS_GAIN,
+            -(az >> 4) * LIS_GAIN)
 
 
 def lis_read():
@@ -109,17 +114,23 @@ def calibrate():
     ax = ay = 0.0;
     az = 1.0;
     ok = 0;
-    for _ in range(CAL_N):
+    for _ in range(CAL_N * 2):
         try:
             (x, y, z) = lis_read_raw();
             ax += x;
             ay += y;
             az += z;
             ok += 1;
-        except OSError:
+        except (OSError, IndexError):
             pass;
         time.sleep_ms(CAL_MS);
-    if (ok < 4):
+    if (ok < CAL_N // 2):
+        # 样本太少说明这段时间 I2C 一直读失败，宁可不用标定值
+        print("[cal] 样本不足", ok, "/", CAL_N);
+        return False;
+    if (abs(az / ok - 1.0) > 0.35):
+        # 取反后 z 应该接近 +1g；差太多说明标定时设备没水平、或者轴映射又不对
+        print("[cal] z 平均值异常", az / ok, "，放弃标定");
         return False;
     # ⚠️ 只存**相对理想值 (0, 0, 1g) 的偏差**，不能把整个向量当零偏。
     #    否则水平时校正结果是 (0,0,0)，角度虽然还是 0，但运动检测的模长变成 0，
