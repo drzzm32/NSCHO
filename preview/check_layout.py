@@ -92,11 +92,41 @@ def check(name, fn) -> int:
     return bad
 
 
+def check_residue(name, fn) -> int:
+    """连续画多帧后，画面必须和"全新画一遍"完全一致。
+
+    局部重绘最容易出的 bug 就是残留：某个会变的区域没被擦干净，旧内容留在屏上。
+    单看一帧看不出来，只有连续帧对比才暴露 —— 所以固化成检查。
+    """
+    from ssd1351_sim import SSD1351 as Sim
+    # ⚠️ 姿态必须**恒定**：小球有 2 像素的移动量化（局部重绘的代价），
+    #    姿态变了就会让"运行中的球位"和"全新绘制的球位"差几个像素，
+    #    那不是残留。恒定姿态下只让温湿度/时间变化，才能测出真正的残留。
+    #    （之前用变化的姿态，32 个"差异"全是量化，白折腾一轮。）
+    seq = [(20.0 + i * 0.5, 45.0 + i, -2.9, 3.4, "1:%02d" % (2 + i // 10))
+           for i in range(24)]
+    p = Sim()
+    ui.reset_cache()
+    for kw in seq:
+        fn(p, *kw[:1], **dict(zip(("r", "pitch", "roll", "uptime"), kw[1:])))
+    q = Sim()
+    ui.reset_cache()
+    kw = seq[-1]
+    fn(q, *kw[:1], **dict(zip(("r", "pitch", "roll", "uptime"), kw[1:])))
+    diff = sum(1 for a, b in zip(p.ram, q.ram) if a != b)
+    if diff:
+        print(f"   [残留] {name}: 连续 24 帧后有 {diff} 个像素和全新绘制不同")
+        return 1
+    print(f"   [ok] {name}: 连续 24 帧无残留")
+    return 0
+
+
 def main() -> int:
     ui.LAYOUT_OVERRIDE = None
     bad = 0
     for name, fn in (("A", ui.layout_a), ("B", ui.layout_b), ("C", ui.layout_c)):
         bad += check(name, fn)
+        bad += check_residue(name, fn)
         print()
     if bad:
         print(f"✗ {bad} 处需要修")

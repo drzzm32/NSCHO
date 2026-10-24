@@ -219,7 +219,7 @@ def layout_a(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
     # 下半：水平仪
     p.fill(0, 78, W, 1, SEP)
     p.prt(4, 80, 0, LBL, BG, "倾角")              # 80..91
-    level(p, 64, 104, 16, pitch, roll)            # 88..120
+    level(p, 64, 104, 16, pitch, roll, force=True)   # A 版整屏刷新，必须强制重画            # 88..120
     p.prt(2, 100, 0, LBL, BG, "%+5.1f" % pitch)   # 8 高 ASCII，居中于圆环左侧
     p.prt(96, 100, 0, LBL, BG, "%+5.1f" % roll)
 
@@ -246,8 +246,11 @@ def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
     # 中文 12 高，两行之间留 2 像素缝（92..103 / 106..117）；数值用 8x8，
     # 垂直居中在中文行里（+2），右对齐到 126 —— 数字串宽度会变，左对齐会忽左忽右
     p.prt(66, 92, 0, LBL, BG, "俯仰")
+    # 数值是右对齐的，字符串长度会变（"-9.3" / "+12.4"），不先擦会留旧字的残笔
+    p.fill(90, 94, 38, 8, BG)
     prt_r(p, 126, 94, 0, VAL, BG, "%+.1f" % pitch)
     p.prt(66, 106, 0, LBL, BG, "横滚")
+    p.fill(90, 108, 38, 8, BG)
     prt_r(p, 126, 108, 0, VAL, BG, "%+.1f" % roll)
 
 
@@ -264,7 +267,7 @@ def layout_c(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
     p.prt(114, 39, 0, LBL, CARD, "%")
     p.fill(4, 66, 120, 58, CARD2)
     p.prt(8, 70, 0, LBL, CARD2, "倾角")
-    level(p, 42, 96, 16, pitch, roll)
+    level(p, 42, 96, 16, pitch, roll, force=True)   # C 版整屏刷新，必须强制重画
     p.prt(66, 78, 0, LBL, CARD2, "俯仰")
     p.prt(94, 78, 0, VAL, CARD2, "%+5.1f" % pitch)
     p.prt(66, 100, 0, LBL, CARD2, "横滚")
