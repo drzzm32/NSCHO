@@ -9,3 +9,5 @@ bak/
 # Editor
 .vscode/
 *.swp
+# 临时提交信息文件
+.git_commit_msg.txt
