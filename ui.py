@@ -231,7 +231,9 @@ def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
     #    （整屏帧缓冲能把这件事做得更彻底，但这个板子的堆拿不到 32KB 连续内存，
     #     见 SSD1351.fb_init()。）
     p.fill(0, 12, 62, 116, BG)          # 左栏：状态带下方到底
-    p.fill(63, 12, 65, 116, BG)         # 右栏
+    # ⚠️ 右栏**不能**整块铺背景：那样会把上一帧的小球擦掉，而 level() 在球没动时
+    #    是提前返回的（局部重绘），结果球就消失了。右栏各元素（俯仰/横滚的 prt、
+    #    水平仪的 level）都会自己铺自己的背景，这里不需要整块填。
     st, stc = level_state(pitch, roll)
     status_bar(p, uptime, st, stc, blink)
     p.prt(3, 18, 0, LBL, BG, "气温")
