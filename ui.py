@@ -268,6 +268,9 @@ def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
         p.prt(3, 18, 0, LBL, BG, "气温")
         p.prt(3, 56, 0, LBL, BG, "湿度")
         p.prt(42, 73, 0, LBL, BG, "%")
+        # ⚠️ 基线对齐：中文墨迹占第 1~11 行（基线 11），ASCII 数字占 0~6（基线 6），
+        #    所以 ASCII 要比中文起始行**晚 5 行**才在同一视觉基线上。
+        #    原来用 94（只晚 2 行）看起来就是数字偏上。
         p.prt(66, 92, 0, LBL, BG, "俯仰")
         p.prt(66, 106, 0, LBL, BG, "横滚")
 
@@ -305,12 +308,12 @@ def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
     # 俯仰 / 横滚数值（右对齐，长度会变，按固定宽度擦）
     ps = "%+.1f" % pitch
     if _changed("pitch", ps):
-        p.fill(90, 94, 38, 8, BG)
-        prt_r(p, 126, 94, 0, VAL, BG, ps)
+        p.fill(90, 97, 38, 8, BG)
+        prt_r(p, 126, 97, 0, VAL, BG, ps)
     rs = "%+.1f" % roll
     if _changed("roll", rs):
-        p.fill(90, 108, 38, 8, BG)
-        prt_r(p, 126, 108, 0, VAL, BG, rs)
+        p.fill(90, 111, 38, 8, BG)
+        prt_r(p, 126, 111, 0, VAL, BG, rs)
 
 
 def layout_c(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True):
