@@ -47,11 +47,6 @@ LIS_GAIN = 0.001        # ±2g + HR(12 位) -> 1mg/digit
 # 运动检测：加速度模长偏离 1g 超过这个量就算"设备在动"，此时冻结角度更新。
 # 0.08g 大约相当于 4.6 度的虚假倾角 —— 低于它就当噪声容忍，高于它明显是碰到了。
 MOTION_G = 0.08
-# 单次允许的最大角度变化（度）。为什么需要：加速度计**无法区分**"倾斜"和
-# "水平 + 横向加速" —— 0.2g 的横向加速度只让模长变 2%，模长检测抓不到，
-# 但算出来是 11 度的假倾角。没有陀螺仪就没有真正的判据，只能用速率限制兜底：
-# 桌面设备不会真的以 80 度/秒翻转，所以出现的突跳一定是运动干扰。
-ATT_MAX_STEP = 4.0
 # 零偏标定：开机时采这么多样本取平均当作水平参考。要求这段时间设备静止且水平。
 CAL_N = 24
 CAL_MS = 25             # 24 x 25ms = 0.6 秒
@@ -237,19 +232,8 @@ def main():
                 mag = math.sqrt(ax * ax + ay * ay + az * az)
                 if abs(mag - 1.0) <= MOTION_G:
                     (p, rl) = attitude(ax, ay, az)
-                    # 单次变化限幅（见 ATT_MAX_STEP 的说明）
-                    dp = p - pitch
-                    if (dp > ATT_MAX_STEP):
-                        dp = ATT_MAX_STEP
-                    elif (dp < -ATT_MAX_STEP):
-                        dp = -ATT_MAX_STEP
-                    dr = rl - roll
-                    if (dr > ATT_MAX_STEP):
-                        dr = ATT_MAX_STEP
-                    elif (dr < -ATT_MAX_STEP):
-                        dr = -ATT_MAX_STEP
-                    pitch += dp * ATT_ALPHA
-                    roll += dr * ATT_ALPHA
+                    pitch += (p - pitch) * ATT_ALPHA
+                    roll += (rl - roll) * ATT_ALPHA
             except OSError:
                 pass
 
