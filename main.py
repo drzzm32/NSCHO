@@ -43,7 +43,10 @@ LOOP_MS = 50            # 姿态取样节拍
 DRAW_MS = 160           # 重绘节流：全屏 32KB，6Hz 左右
 SHT30_MS = 1000         # 温湿度取样周期
 SHT30_AVG = 8           # 平均窗口（8 个样本 ≈ 8 秒，比原来的 1 秒更稳）
-ATT_ALPHA = 0.25        # 姿态低通系数：越小越稳、跟手越慢
+# 姿态平滑窗口（样本数）。50ms 一个样本，8 个 = 400ms 窗口。
+# 滑动平均比单极 EMA 抑制抖动更彻底（噪声按 sqrt(N) 衰减），代价是固定滞后
+# 约 N/2 个样本（8 个窗口约 200ms）。嫌抖就把窗口加大，嫌跟手慢就减小。
+ATT_WIN = 8
 
 # SHT30 系统误差校正（用户标定值，不要当垃圾删掉）：
 # 板子本身的热源/气流让读数有固定偏差，这两个常数是实测比对后定下来的。
@@ -262,6 +265,8 @@ def main():
 
     pitch = 0.0
     roll = 0.0
+    avg_p = Avg(ATT_WIN, 0.0)     # 姿态滑动平均窗口（复用 SHT30 那个 Avg 类）
+    avg_r = Avg(ATT_WIN, 0.0)
     t_att = time.ticks_ms()
     t_sht = t_att
     t_pwr = t_att
@@ -283,8 +288,10 @@ def main():
                 mag = math.sqrt(ax * ax + ay * ay + az * az)
                 if abs(mag - 1.0) <= MOTION_G:
                     (p, rl) = attitude(ax, ay, az)
-                    pitch += (p - pitch) * ATT_ALPHA
-                    roll += (rl - roll) * ATT_ALPHA
+                    avg_p.push(p)
+                    avg_r.push(rl)
+                    pitch = avg_p.value()
+                    roll = avg_r.value()
             except OSError:
                 pass
 
