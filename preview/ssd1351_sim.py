@@ -311,10 +311,11 @@ def selftest(p: SSD1351):
     check("fill(0,0,8,4) 写了 32 个像素", n, 32)
     # 4) bwp 的段数（照抄驱动的 int(h/8)：12 高只画 8 行）
     p.clear(0)
-    one = bytes([0xFF] * 12)
+    # 12x12 的字模是 12 列 × 2 段 = 24 字节，给 12 字节会 IndexError
+    one = bytes([0xFF] * 24)
     p.bwp(0, 0, 12, 12, 0xFFFFFF, 0x000000, one)
     rows = sum(1 for y in range(12) if any(c == 0xFFFF for c in p.ram[y * W:y * W + 12]))
-    check("bwp(h=12) 只画了 8 行（驱动现状）", rows, 8)
+    check("bwp(h=12) 画满 12 行（分段修正后）", rows, 12)  # 全 0xFF 的测试数据 12 行都有墨
     return ok
 
 

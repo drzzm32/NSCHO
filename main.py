@@ -219,15 +219,6 @@ def main():
     # 标定加速度计零偏：要求此时设备静止且水平（开机画面那 2 秒正好用上）
     if (calibrate()):
         print("[cal] 零偏", LIS_ZERO)
-    # 诊断：把**当前姿态**下的原始加速度打出来，用来确认轴映射。
-    # 这一步比猜快得多 —— 把设备摆在正常使用的姿态上，看哪一轴接近 ±1.0g。
-    try:
-        for _ in range(3):
-            (rx, ry, rz) = lis_read_raw()
-            print("[lis] 原始 g: x=%.3f y=%.3f z=%.3f" % (rx, ry, rz))
-            time.sleep_ms(120)
-    except OSError:
-        print("[lis] 读不到")
     else:
         print("[cal] 采样失败，用默认零偏")
     try:
