@@ -150,9 +150,10 @@ def attitude(ax, ay, az):
     # ⚠️ 实测：芯片的 X/Y 和屏幕的左右/上下是**交叉**的 ——
     #    设备向左倾斜时重力分量落在 Y 轴而不是 X 轴，所以这里互换。
     #    （原公式用 ax 算 pitch、ay 算 roll，结果是"左倾→球往下跑"。）
+    #    实测校准结果：z 取反、X/Y 互换、roll 再取负（三处都是真机上试出来的）。
     #    约定：roll 正 = 右侧低 → 球往右滚；pitch 正 = 屏幕底部低 → 球往下滚。
     pitch = math.atan2(-ay, math.sqrt(ax * ax + az * az)) * 57.29578
-    roll = math.atan2(ax, az) * 57.29578
+    roll = math.atan2(-ax, az) * 57.29578
     return pitch, roll
 
 
