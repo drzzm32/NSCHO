@@ -115,6 +115,27 @@ BALL_STEP = 2
 _last_ball = [None, None]
 
 
+# 每个会变的元素记下"上次画的是什么"，内容没变就**不重画**。
+# 为什么这是必须的：每帧无条件重画 = 先铺背景再画字，屏幕上就会出现"刷黑再出现"
+# 的闪烁。温湿度一秒才更新一次、时间一分钟一次，绝大部分帧其实什么都不用改。
+_paint_cache = {}
+
+
+def _changed(key, value):
+    """内容变了返回 True 并记录；没变返回 False。"""
+    if _paint_cache.get(key) == value:
+        return False
+    _paint_cache[key] = value
+    return True
+
+
+def reset_cache():
+    """强制下一帧全部重画（切布局、开机后第一次绘制用）。"""
+    _paint_cache.clear()
+    _last_ball[0] = None
+    _last_ball[1] = None
+
+
 def level(p, cx, cy, r, pitch, roll, force=False):
     """小球水平仪：外环 + 内环 + 十字 + 小球。
 
@@ -167,24 +188,23 @@ def prt_r(p, x_right, y, fid, fore, back, s):
 
 
 def status_bar(p, uptime, state, state_col, dot_on=True):
-    """顶部一行状态栏：左边闪烁状态点、中间时间（居中）、右边姿态状态。
+    """顶部状态栏：左边闪烁状态点、中间时间（居中）、右边姿态状态。
 
-    字号选择：中文是 12x12，如果用 6x8 的 ASCII，时间会明显比两侧中文小一圈、
-    看着像"降级显示"。这里用 8x8（fid=1），高 8 居中在 12 行里（y=2），
-    视觉上和 12px 中文更接近。
-    ⚠️ 中文 12 高只能画在 y=0（占 0..11，正好落在 12 像素的带子里），画 y=3 会露出带子。
+    只在内容变化时重画对应的小区域 —— 整条重铺会让时间/状态每帧"闪"一次。
+    中文 12 高只能画在 y=0；ASCII(6x8) 8 高，放 y=2 垂直居中。
     """
-    p.fill(0, 0, W, 12, BAR)
-    # 左侧状态点：跟着姿态状态变色（水平=绿、微斜/倾斜=橙），按 500ms 通断闪烁。
-    # 它同时是个"程序还活着"的指示 —— 屏上其它内容都只在读数变化时才动。
-    # 灭掉时用暗色而不是不画，这样位置固定、不会看着像"点漂移了"。
-    disc(p, 7, 6, 3, state_col if dot_on else SEP)
-    # 时间：6x8（字宽 6、字高 8），按屏幕中心 64 对齐，在 12 行里垂直居中（y=2）
-    p.prt(W // 2 - len(uptime) * 6 // 2, 2, 0, BAR_TXT, BAR, uptime)
-    # 状态词：12 高，右对齐到 127。用 prt_cjk 而不是 prt —— 后者画完第一个字就会
-    # 因为 x >= 116 把第二个字折到下一行（见 prt_cjk 的说明）。
-    prt_cjk(p, W - len(state) * 12, 0, state_col, BAR, state)
-    p.fill(0, 12, W, 1, SEP)
+    if _changed("bar_bg", True):
+        p.fill(0, 0, W, 12, BAR)
+        p.fill(0, 12, W, 1, SEP)
+    if _changed("dot", (dot_on, state_col)):
+        p.fill(4, 3, 7, 7, BAR)                 # 先擦掉上一个点
+        disc(p, 7, 6, 3, state_col if dot_on else SEP)
+    if _changed("time", uptime):
+        p.fill(34, 2, 60, 8, BAR)               # 时间区按固定宽度擦
+        p.prt(W // 2 - len(uptime) * 6 // 2, 2, 0, BAR_TXT, BAR, uptime)
+    if _changed("state", (state, state_col)):
+        p.fill(96, 0, 32, 12, BAR)              # 右侧状态词区
+        prt_cjk(p, W - len(state) * 12, 0, state_col, BAR, state)
 
 
 def fmt_uptime(ms):
@@ -206,6 +226,7 @@ def fmt_temp(t):
 
 # ---------------------------------------------------------------- 方案 A：上下分栏（默认）
 def layout_a(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True):
+    reset_cache()          # 整屏重刷布局，缓存必须清掉
     p.clear(BG)
     st, stc = level_state(pitch, roll)
     status_bar(p, uptime, st, stc, blink)
@@ -226,36 +247,58 @@ def layout_a(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
 
 # ---------------------------------------------------------------- 方案 B：左右分栏
 def layout_b(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True):
-    # ⚠️ 这里**不用 clear()**。整屏清屏会让屏幕先全黑、再画内容，中间那段就是你看到的
-    #    闪烁。改成按区域铺底、原地覆盖：任何时刻屏幕上都不存在"整屏空白"的瞬间。
-    #    （整屏帧缓冲能把这件事做得更彻底，但这个板子的堆拿不到 32KB 连续内存，
-    #     见 SSD1351.fb_init()。）
-    p.fill(0, 12, 62, 116, BG)          # 左栏：状态带下方到底
-    # ⚠️ 右栏**不能**整块铺背景：那样会把上一帧的小球擦掉，而 level() 在球没动时
-    #    是提前返回的（局部重绘），结果球就消失了。右栏各元素（俯仰/横滚的 prt、
-    #    水平仪的 level）都会自己铺自己的背景，这里不需要整块填。
+    """B 左右分栏。
+
+    ⚠️ 这里**没有整块铺背景**，也没有 clear()。每个会变的元素自己判断"值变了没"，
+    变了才擦自己那块再画 —— 否则每帧刷黑再重写，屏幕上就是闪烁。
+    静态元素（标签、分隔线）靠 _changed 只画一次。
+    """
     st, stc = level_state(pitch, roll)
     status_bar(p, uptime, st, stc, blink)
-    p.prt(3, 18, 0, LBL, BG, "气温")
-    p.digi(32, 40, temp_color(int(t)), BG, fmt_temp(t))
-    p.prt(3, 56, 0, LBL, BG, "湿度")
-    p.digi(26, 78, humi_color(int(r)), BG, "%d" % int(r))   # 69..87，和 56..67 的标签留 1 行缝
-    p.prt(42, 73, 0, LBL, BG, "%")
-    p.fill(62, 12, 1, 116, SEP)         # 左右分隔线（顺带盖住两栏的交界）
+
+    # 静态：左右分隔线 + 标签（只画一次）
+    if _changed("sep", True):
+        # 先铺背景（从 y=13 起，别盖住 y=12 的分隔线），再画分隔线，最后画标签
+        p.fill(0, 13, 62, 115, BG)              # 左栏
+        p.fill(63, 13, 65, 115, BG)             # 右栏
+        p.fill(62, 13, 1, 115, SEP)             # 中间竖线
+        p.fill(0, 12, W, 1, SEP)                # 横线（放在背景之后，避免被盖掉）
+        p.prt(3, 18, 0, LBL, BG, "气温")
+        p.prt(3, 56, 0, LBL, BG, "湿度")
+        p.prt(42, 73, 0, LBL, BG, "%")
+        p.prt(66, 92, 0, LBL, BG, "俯仰")
+        p.prt(66, 106, 0, LBL, BG, "横滚")
+
+    # 温度（数码管）：值或颜色变了才重画
+    tc = temp_color(int(t))
+    ts = fmt_temp(t)
+    if _changed("temp", (ts, tc)):
+        p.fill(4, 26, 58, 26, BG)
+        p.digi(32, 40, tc, BG, ts)
+
+    # 湿度
+    hc = humi_color(int(r))
+    hs = "%d" % int(r)
+    if _changed("humi", (hs, hc)):
+        p.fill(6, 64, 50, 26, BG)
+        p.digi(26, 78, hc, BG, hs)
+
+    # 水平仪：内部自己判断小球移动
     level(p, 96, 58, 24, pitch, roll)
-    # 中文 12 高，两行之间留 2 像素缝（92..103 / 106..117）；数值用 8x8，
-    # 垂直居中在中文行里（+2），右对齐到 126 —— 数字串宽度会变，左对齐会忽左忽右
-    p.prt(66, 92, 0, LBL, BG, "俯仰")
-    # 数值是右对齐的，字符串长度会变（"-9.3" / "+12.4"），不先擦会留旧字的残笔
-    p.fill(90, 94, 38, 8, BG)
-    prt_r(p, 126, 94, 0, VAL, BG, "%+.1f" % pitch)
-    p.prt(66, 106, 0, LBL, BG, "横滚")
-    p.fill(90, 108, 38, 8, BG)
-    prt_r(p, 126, 108, 0, VAL, BG, "%+.1f" % roll)
+
+    # 俯仰 / 横滚数值（右对齐，长度会变，按固定宽度擦）
+    ps = "%+.1f" % pitch
+    if _changed("pitch", ps):
+        p.fill(90, 94, 38, 8, BG)
+        prt_r(p, 126, 94, 0, VAL, BG, ps)
+    rs = "%+.1f" % roll
+    if _changed("roll", rs):
+        p.fill(90, 108, 38, 8, BG)
+        prt_r(p, 126, 108, 0, VAL, BG, rs)
 
 
-# ---------------------------------------------------------------- 方案 C：卡片式
 def layout_c(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True):
+    reset_cache()          # 整屏重刷布局，缓存必须清掉
     p.clear(BG)
     st, stc = level_state(pitch, roll)
     status_bar(p, uptime, st, stc, blink)
@@ -277,12 +320,6 @@ def layout_c(p, t=23.5, r=48.2, pitch=-9.3, roll=12.4, uptime="0:00", blink=True
 # 换方案只改这一行（三个函数签名一致，方便对比）
 LAYOUT = layout_b
 LAYOUT_NAME = "B 左右分栏"
-
-
-def reset_cache():
-    """强制下一帧重画所有缓存过的区域（切布局、开机后第一次绘制时用）。"""
-    _last_ball[0] = None
-    _last_ball[1] = None
 
 
 def draw(p, t, r, pitch, roll, uptime):

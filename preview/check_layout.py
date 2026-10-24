@@ -46,6 +46,7 @@ def non_bg(ram, color):
 def check(name, fn) -> int:
     bad = 0
     p = SSD1351()
+    ui.reset_cache()          # 局部重绘有变更缓存，独立渲染前必须清
     fn(p)
     ram = p.ram
     bg = rgb565(ui.BG)
@@ -106,7 +107,7 @@ def check_residue(name, fn) -> int:
     seq = [(20.0 + i * 0.5, 45.0 + i, -2.9, 3.4, "1:%02d" % (2 + i // 10))
            for i in range(24)]
     p = Sim()
-    ui.reset_cache()
+    ui.reset_cache()          # 连续帧从冷缓存开始
     for kw in seq:
         fn(p, *kw[:1], **dict(zip(("r", "pitch", "roll", "uptime"), kw[1:])))
     q = Sim()
