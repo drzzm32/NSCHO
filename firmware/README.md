@@ -3,6 +3,8 @@
 Micropython 源码位置：`E:\Works\esp-mpy`，板级目录 `ports/esp32/boards/NSCLK`。
 2022-09 的构建产物在 `ports/esp32/build/`。
 
+**各目录的版本与来源见 [PATHS.md](PATHS.md)** —— MicroPython 1.19.0 + ESP-IDF 4.4.0（配套版本）。
+
 **当前设备上跑的是 2022-09-10 的固件，功能完整** —— 除非要加原生绘制函数（见下），
 否则不需要重新烧录。
 
