@@ -158,22 +158,45 @@ def calibrate():
     return True;
 
 
-def attitude(ax, ay, az):
-    """重力向量 -> (pitch, roll)，单位度。
+# ---------------------------------------------------------------- 姿态双基准
+# 设备有两个正常摆放姿态，按俯仰角区分，以 -45° 为分界切换：
+#   平放：屏幕朝上，实测俯仰 ≈ 0°，"上"方向是 +Z（重力读数 (0,0,1)）
+#   竖立：屏幕立起，实测俯仰 ≈ -90°，"上"方向变成 +Y（重力读数 (0,1,0)）
+# 判定用**平放公式算出的俯仰**（见 attitude()），不用别的判据 —— 这样两个姿态
+# 的分界就是你看到的那个数。
+UPRIGHT_PITCH = -90.0      # 竖立时的平放俯仰读数
+POSTURE_SWITCH = -45.0     # 低于这个角度判为竖立（两姿态的分界）
 
-    pitch：绕 Y 轴（机头上下）
-    roll ：绕 X 轴（左右倾斜）
-    符号与 ui.level() 的小球一致：**设备往某一侧倾斜时，球朝那一侧滚**（物理水平仪）。
-    真机上如果觉得方向反了，把下面两行的 atan2 参数对调即可。
+_R2D = 57.29578
+
+
+def attitude(ax, ay, az):
+    """重力向量 -> (pitch, roll, upright)，单位度，**已按当前姿态归零**。
+
+    推导方式不是逐个试符号，而是把竖立姿态下的重力向量**旋转回平放坐标系**
+    (绕 X 轴 +90°：(x,y,z) -> (x, -z, y))，然后套用同一套平放公式。
+    这样两种姿态的读数定义完全一致，符号不会自己打架。
+
+    平放公式（实测校准过 z 取反、X/Y 互换、roll 取负）：
+        pitch = atan2(-y, sqrt(x^2+z^2))
+        roll  = atan2(-x, z)
+    竖立时 v' = (x, -z, y)，代进去就是：
+        pitch = atan2(z, sqrt(x^2+y^2))
+        roll  = atan2(-x, y)
+
+    竖立时必须换轴：此时 az ≈ 0，继续用 atan2(-ax, az) 会让 roll 在 ±90° 之间跳。
     """
-    # ⚠️ 实测：芯片的 X/Y 和屏幕的左右/上下是**交叉**的 ——
-    #    设备向左倾斜时重力分量落在 Y 轴而不是 X 轴，所以这里互换。
-    #    （原公式用 ax 算 pitch、ay 算 roll，结果是"左倾→球往下跑"。）
-    #    实测校准结果：z 取反、X/Y 互换、roll 再取负（三处都是真机上试出来的）。
-    #    约定：roll 正 = 右侧低 → 球往右滚；pitch 正 = 屏幕底部低 → 球往下滚。
-    pitch = math.atan2(-ay, math.sqrt(ax * ax + az * az)) * 57.29578
-    roll = math.atan2(-ax, az) * 57.29578
-    return pitch, roll
+    # 平放约定下的俯仰，用来判姿态
+    flat_pitch = math.atan2(-ay, math.sqrt(ax * ax + az * az)) * _R2D
+
+    if (flat_pitch < POSTURE_SWITCH):
+        # 竖立：以竖立姿态为零位
+        pitch = math.atan2(az, math.sqrt(ax * ax + ay * ay)) * _R2D
+        roll = math.atan2(-ax, ay) * _R2D
+        return pitch, roll, True
+
+    roll = math.atan2(-ax, az) * _R2D
+    return flat_pitch, roll, False
 
 
 # ---------------------------------------------------------------- SHT30
@@ -265,6 +288,7 @@ def main():
 
     pitch = 0.0
     roll = 0.0
+    upright = False              # 当前摆放姿态（False=平放，True=竖立）
     # ⚠️ 变量名不能叫 avg_r —— 那个是湿度（roll 和 humidity 撞了会让湿度显示成角度值）
     avg_pitch = Avg(ATT_WIN, 0.0)   # 姿态滑动平均（复用 SHT30 那个 Avg 类）
     avg_roll = Avg(ATT_WIN, 0.0)
@@ -288,7 +312,13 @@ def main():
                 # 保持上一次的角度。
                 mag = math.sqrt(ax * ax + ay * ay + az * az)
                 if abs(mag - 1.0) <= MOTION_G:
-                    (p, rl) = attitude(ax, ay, az)
+                    (p, rl, up) = attitude(ax, ay, az)
+                    if (up != upright):
+                        # 姿态切换时读数会跳 90°，平滑窗口会把这个跳变拖成一秒的
+                        # 斜坡。所以切换瞬间直接重建窗口，从新的零位重新开始平均。
+                        upright = up
+                        avg_pitch = Avg(ATT_WIN, p)
+                        avg_roll = Avg(ATT_WIN, rl)
                     avg_pitch.push(p)
                     avg_roll.push(rl)
                     pitch = avg_pitch.value()
