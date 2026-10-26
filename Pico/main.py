@@ -23,6 +23,7 @@ from machine import Pin, UART
 import SSD1325 as OLED
 import EnvSensor as Env
 import ui
+import logger
 
 LED = Pin(25, Pin.OUT)
 
@@ -79,6 +80,10 @@ def main():
     #    增量重画会跳过本该重画的区域，屏幕就停在开机画面或残缺状态。
     ui.reset()
 
+    # 上电次数 +1（写在 log/boot.id），并把日志计时起点设在真正开始运行的时候
+    boot_id = logger.begin()
+    print("[log] 上电次数", boot_id)
+
     d = {"pm1": 0, "pm25": 0, "pm10": 0, "co2": 0, "hcho": None}
     sel = 0                   # UART0 交替选择：0=CO2，1=甲醛
     which = 0
@@ -123,6 +128,11 @@ def main():
             which = (which + 1) % len(ui.PM_ITEMS)
 
         ui.draw(OLED, d, which)
+
+        # 每分钟记一条日志（先攒在 RAM，每 30 分钟合并落盘一次 —— 见 logger.py 文件头
+        # 的 flash 寿命计算：每分钟落盘会让元数据块约 5 个月写穿）
+        logger.tick(now, d, boot_id)
+
         time.sleep_ms(READ_MS)
 
 
