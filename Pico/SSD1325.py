@@ -76,39 +76,6 @@ def __utf_read__(offset):
     UTF.seek(offset);
     return UTF.read(UTF_SIZE);
 
-DIGI_B = open("font/digi.bin", mode = "rb");
-DIGI_S = open("font/digi_small.bin", mode = "rb");
-
-def __digi__(siz):
-    dmap = {
-        0: (DIGI_S, 12, 18),
-        1: (DIGI_B, 20, 32)
-    };
-    return dmap[siz % len(dmap)];
-
-def __digi_get__(i, siz = 0):
-    digi = __digi__(siz);
-    s = int(digi[1] * digi[2] / 2);
-    b = ord(i);
-    if (b >= ord('0') and b <= ord('9')):
-        offset = int((b - b'0'[0]) * s);
-    else:
-        if (siz == 0):
-            m = {
-                ord('-'): 10,
-                ord('.'): 11,
-                ord('C'): 12,
-                ord('S'): 13,
-                ord('U'): 14,
-            };
-            offset = int(m.get(b, 15) * s);
-        else:
-            if (b == ord(':')):
-                offset = int(10 * s);
-            else:
-                offset = int(11 * s);           
-    digi[0].seek(offset);
-    return digi[0].read(s);
 # ================================ FONT END ================================
 
 OLED_BUF = [ 0x00 ] * int(FONT_MAX_WIDTH * 8 / 2);
@@ -354,10 +321,3 @@ def digi7(x, y, string):
         bmp(px, y, DIGI7_W, DIGI7_H, DIGI7.read(DIGI7_G));
         px += DIGI7_W;
 
-def digi(x, y, s, siz = 0):
-    digi = __digi__(siz);
-    off = -len(s) * digi[1] / 2;
-    for i in s:
-        buf = __digi_get__(i, siz);
-        bmp(x + off, y - digi[2] / 2, digi[1], digi[2], buf);
-        off += digi[1];

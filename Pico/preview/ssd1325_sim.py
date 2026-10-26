@@ -47,8 +47,6 @@ class SSD1325:
         self.f6 = (f / "font6.bin").read_bytes()
         self.f8 = (f / "font8.bin").read_bytes()
         self.f16 = (f / "font16.bin").read_bytes()
-        self.digi_b = (f / "digi.bin").read_bytes()
-        self.digi_s = (f / "digi_small.bin").read_bytes()
         # 中文字模改成 12x12 子集 + 码位表（和 SSD1325.py 保持一致）
         self.utf = (f / "utf12.bin").read_bytes()
         self.utf_tab = (f / "utf12.tab").read_bytes()
@@ -190,23 +188,6 @@ class SSD1325:
         if p.exists():
             self.bmp(x, y, 64, 64, p.read_bytes(), True)
 
-    def _digi(self, siz):
-        return ((self.digi_s, 12, 18), (self.digi_b, 20, 32))[siz % 2]
-
-    def _digi_get(self, i, siz=0):
-        data, dw, dh = self._digi(siz)
-        s = int(dw * dh / 2)
-        b = ord(i)
-        if ord("0") <= b <= ord("9"):
-            off = (b - ord("0")) * s
-        elif siz == 0:
-            off = {ord("-"): 10, ord("."): 11, ord("C"): 12,
-                   ord("S"): 13, ord("U"): 14}.get(b, 15) * s
-        else:
-            off = (10 if b == ord(":") else 11) * s
-        return data[off:off + s]
-
-    # ---- 7 段数码管（和 SSD1325.digi7 对应）----
     DIGI7_W = 20
     DIGI7_H = 26
     DIGI7_G = DIGI7_W * DIGI7_H // 2
@@ -223,13 +204,6 @@ class SSD1325:
             off = k * self.DIGI7_G
             self.bmp(px, y, self.DIGI7_W, self.DIGI7_H, self._d7[off:off + self.DIGI7_G])
             px += self.DIGI7_W
-
-    def digi(self, x, y, s, siz=0):
-        _d, dw, dh = self._digi(siz)
-        off = -len(s) * dw / 2
-        for i in s:
-            self.bmp(x + off, y - dh / 2, dw, dh, self._digi_get(i, siz))
-            off += dw
 
     def _utf_seek(self, code):
         """和 SSD1325.__utf_seek__ 一样：升序码位表里线性找。"""
