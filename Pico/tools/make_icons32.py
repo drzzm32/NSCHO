@@ -1,0 +1,187 @@
+"""生成 Pico 状态角标：64x64 源图 -> 32x32 字模，外加程序化绘制的"严"图标。
+
+为什么要预生成 32x32
+--------------------
+真机上 badge() 原来是从 64x64 里**隔点取样**（每 2 像素取 1 个）。这套图标是
+线条型素材，隔点会把细笔画整根抽掉 —— 肺的细支气管、三角的边框都在这一步消失，
+屏上看着就是"一团碎片"。预先做成 32x32 后，屏上直接整块 bmp，既不丢细节也省一次
+逐像素重打包。
+
+降采样用 **max 池化**（2x2 取最大值）而不是平均：
+  * 平均会把 1 像素宽的笔画稀释成 1/4 亮度，在 4 位灰度屏上几乎看不见
+  * max 保留笔画，代价是整体偏粗 —— 但角标只有 32px，宁可粗也不可断
+
+"严" 档原来和 "重" 共用 9998（两张图完全一样，屏上区分不出来），
+这里用代码画一个骷髅补上。
+
+用法：
+    python tools/make_icons32.py            # 读 tools/icon_src64，写 icon/
+    python tools/make_icons32.py --preview  # 另外输出预览图到 preview/out/
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "tools" / "icon_src64"
+DST = ROOT / "icon"
+PREVIEW = ROOT / "preview" / "out"
+
+SRC_SIZE = 64
+DST_SIZE = 32
+
+# 分档 -> 图标 id（语义从"呼吸顺畅"递进到"严重污染"）
+ICON_MAP = {
+    3004: "优",     # 肺
+    3001: "良",     # 叶子
+    3002: "轻",     # 气流
+    1029: "中",     # 口罩
+    9998: "重",     # 警告三角
+    9999: "严",     # 骷髅（本脚本绘制）
+}
+
+
+# ---------------------------------------------------------------- 4 位灰度读写
+def read64(path: Path) -> list[list[int]]:
+    """读 64x64 4 位灰度：每字节 2 像素、高半字节是左边的像素、行优先。"""
+    data = path.read_bytes()
+    need = SRC_SIZE * SRC_SIZE // 2
+    if len(data) < need:
+        raise ValueError(f"{path.name}: 只有 {len(data)} 字节，至少要 {need}")
+    grid = [[0] * SRC_SIZE for _ in range(SRC_SIZE)]
+    for y in range(SRC_SIZE):
+        for x in range(SRC_SIZE):
+            b = data[y * (SRC_SIZE // 2) + (x >> 1)]
+            grid[y][x] = (b >> 4) if (x & 1) == 0 else (b & 0x0F)
+    return grid
+
+
+def write32(grid: list[list[int]], path: Path) -> int:
+    out = bytearray(DST_SIZE * DST_SIZE // 2)
+    for y in range(DST_SIZE):
+        for x in range(DST_SIZE):
+            v = grid[y][x] & 0x0F
+            j = y * (DST_SIZE // 2) + (x >> 1)
+            if x & 1:
+                out[j] = (out[j] & 0xF0) | v
+            else:
+                out[j] = (out[j] & 0x0F) | (v << 4)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(out))
+    return len(out)
+
+
+# ---------------------------------------------------------------- 降采样
+def pool_max(grid: list[list[int]]) -> list[list[int]]:
+    """2x2 max 池化：保留细笔画。"""
+    out = [[0] * DST_SIZE for _ in range(DST_SIZE)]
+    for y in range(DST_SIZE):
+        for x in range(DST_SIZE):
+            a = grid[y * 2][x * 2]
+            b = grid[y * 2][x * 2 + 1]
+            c = grid[y * 2 + 1][x * 2]
+            d = grid[y * 2 + 1][x * 2 + 1]
+            out[y][x] = max(a, b, c, d)
+    return out
+
+
+# ---------------------------------------------------------------- 骷髅
+def draw_skull() -> list[list[int]]:
+    """程序化画一个 32x32 骷髅：头骨 + 两个眼窝 + 鼻腔 + 牙齿。"""
+    g = [[0] * DST_SIZE for _ in range(DST_SIZE)]
+    INK = 15
+    BG = 0
+
+    cx = 15.5
+    # 头骨：上半是圆，下半是方下巴
+    for y in range(DST_SIZE):
+        for x in range(DST_SIZE):
+            dx = x - cx
+            if y < 22:
+                if dx * dx + (y - 13) * (y - 13) <= 12.5 * 12.5:
+                    g[y][x] = INK
+            else:
+                # 下颌：两侧收窄
+                half = 9 - (y - 22) // 3
+                if -half <= dx <= half and y <= 27:
+                    g[y][x] = INK
+
+    # 眼窝：两个圆挖空
+    for (ex, ey, r) in ((10.5, 14.0, 3.6), (20.5, 14.0, 3.6)):
+        for y in range(DST_SIZE):
+            for x in range(DST_SIZE):
+                if (x - ex) ** 2 + (y - ey) ** 2 <= r * r:
+                    g[y][x] = BG
+
+    # 鼻腔：倒三角
+    for y in range(17, 22):
+        half = (y - 17) // 2
+        for x in range(int(cx) - half, int(cx) + half + 1):
+            if 0 <= x < DST_SIZE:
+                g[y][x] = BG
+
+    # 牙齿：下颌上挖出 2 条竖缝
+    for x in (13, 18):
+        for y in range(23, 28):
+            g[y][x] = BG
+
+    return g
+
+
+# ---------------------------------------------------------------- 入口
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--preview", action="store_true")
+    a = ap.parse_args()
+
+    DST.mkdir(parents=True, exist_ok=True)
+    made = []
+
+    for icon_id, grade in sorted(ICON_MAP.items()):
+        src = SRC / f"{icon_id}.bin"
+        # 程序化绘制的优先：9999 的 64x64 源图和 9998 完全一样，
+        # 用源图的话"严"和"重"在屏上是同一张图，区分不出来。
+        if icon_id == 9999:
+            grid = draw_skull()
+            how = "程序化绘制（骷髅）"
+        elif src.exists():
+            grid = pool_max(read64(src))
+            how = "64->32 max 池化"
+        else:
+            print(f"  跳过 {icon_id}（{grade}）：源图缺失且无内置画法")
+            continue
+        n = write32(grid, DST / f"{icon_id}.bin")
+        made.append((grade, icon_id, grid, n))
+        print(f"  {grade}  {icon_id}.bin  {n} 字节  ({how})")
+
+    if a.preview:
+        PREVIEW.mkdir(parents=True, exist_ok=True)
+        try:
+            from PIL import Image, ImageDraw
+        except ImportError:
+            print("  没装 Pillow，跳过预览")
+            return 0
+        sc = 5
+        w = DST_SIZE * sc
+        comp = Image.new("RGB", (w * len(made) + 8 * (len(made) + 1), w + 30), (18, 18, 18))
+        d = ImageDraw.Draw(comp)
+        for i, (grade, icon_id, grid, _) in enumerate(made):
+            im = Image.new("L", (DST_SIZE, DST_SIZE), 0)
+            px = im.load()
+            for y in range(DST_SIZE):
+                for x in range(DST_SIZE):
+                    px[x, y] = int(grid[y][x] * 255 / 15)
+            comp.paste(im.convert("RGB").resize((w, w), Image.NEAREST), (8 + i * (w + 8), 26))
+            d.text((8 + i * (w + 8) + w // 2 - 6, 8), grade, fill=(230, 230, 230))
+        out = PREVIEW / "icons32.png"
+        comp.save(out)
+        print(f"  预览 -> {out}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

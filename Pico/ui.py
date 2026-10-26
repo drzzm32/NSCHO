@@ -21,6 +21,10 @@ W, H = 128, 64
 # ---- 灰度分层（4 位屏最值钱的地方就是它，比画边框划算）----
 C_BAND = 6      # 状态带底色
 C_CO2 = 1       # CO2 行的底色（比主区亮一点，把两块分开）
+# 底部条文字亮度：4 位灰度最高 15，50% 就是 8。
+# 原来 CO2 标签用 5（33%）、数值用 15（100%），一暗一亮差得太远，
+# 现在标签和数值统一到 8，甲醛那格同理。
+C_BAR_TXT = 0x18    # fg=8, bg=1
 C_HI = 0x0F     # 主区数值：纯白（背景 0 = 主区底色）
 C_LBL = 0x08    # 主区标签：暗灰
 C_DIM = 0x05    # 更暗的次要信息
@@ -34,11 +38,11 @@ GRADES = (
     #   摆件素材，没有"空气好"的图形；差的一端正好有口罩/防毒面罩/警告，语义是通的。
     (35,  "优", 3004),      # 自己画的：肺（呼吸健康）
     (75,  "良", 3001),      # 自己画的：叶子
-    (115, "轻", 1021),      # 现成素材：口罩
-    (150, "中", 1029),      # 现成素材：防毒面罩
+    (115, "轻", 3002),      # 气流（自己画的）
+    (150, "中", 1029),      # 现成素材：口罩
     (250, "重", 9998),      # 现成素材：警告三角
 )
-GRADE_LAST = ("严", 9999)
+GRADE_LAST = ("严", 9999)   # 骷髅（程序化绘制，和"重"的警告三角区分开）
 
 # ---- 界面里用到的全部中文，**显式列出来**（tools/make_cjk.py 照这个生成子集）
 # 为什么显式列、不扫源码：扫字符串字面量会把注释/docstring 里的中文也抓进去，
@@ -96,6 +100,10 @@ def badge(o, x, y, icon_id, size=32, src=64, prefix="icon"):
     if len(data) < src * src // 2:
         return
     step = src // size
+    if step == 1:
+        # 预生成的 32x32 图标走这条路：整块直贴，省掉逐像素重打包
+        o.bmp(x + size // 2, y + size // 2, size, size, data, True)
+        return
     buf = bytearray(size * size // 2)
     for row in range(size):
         for c in range(size):
@@ -138,7 +146,9 @@ def draw(o, d, which, prefix="icon"):
     # ---- 状态带：只有轮换或等级变化才重画（灰底 + 标签 + 中文等级）
     if _last.get("band") != (which, ch):
         o.fill(0, 0, W, 16, C_BAND)
-        o.prt(3, 4, 0, 0x6F, name)              # 6x8 标签，背景=6 与灰带一致
+        # 顶栏左端放品牌名 NSCHO（5 字 x 6px = 30px），轮换标签跟在其后
+        o.prt(3, 4, 0, 0x6B, "NSCHO")           # fg=11 稍暗，不抢主信息的注意力
+        o.prt(40, 4, 0, 0x6F, name)             # 6x8 标签，白色（bg=6 与灰带一致）
         o.prt(112, 2, 2, 0x6F, ch)              # 12x12 中文等级，背景=6
         _last["band"] = (which, ch)
 
@@ -150,19 +160,21 @@ def draw(o, d, which, prefix="icon"):
 
     # ---- 角标：等级或图标目录变化才重画
     if _last.get("icon") != (ico, prefix):
-        badge(o, 86, 16, ico, 32, 64, prefix)
+        # 图标已预生成为 32x32（tools/make_icons32.py），这里 1:1 直贴，
+        # 不再从 64x64 隔点取样 —— 隔点会把细笔画抽掉，之前辨识度差就是这个原因
+        badge(o, 86, 16, ico, 32, 32, prefix)
         _last["icon"] = (ico, prefix)
 
     # ---- 底部条：底纹和静态标签只画一次
     if not _last.get("bar"):
         o.fill(4, 48, 120, 16, C_CO2)
-        o.prt(7, 52, 0, 0x15, "CO2")            # 6x8 标签：fg=5 暗、bg=1
-        o.prt(64, 50, 2, 0x1F, "甲醛")          # 静态中文标签
+        o.prt(7, 52, 0, C_BAR_TXT, "CO2")       # 6x8 标签，50% 亮度
+        o.prt(64, 50, 2, C_BAR_TXT, "甲醛")     # 静态中文标签，50% 亮度
         _last["bar"] = True
 
     # CO2 数值：值变了才重画（x=31 留一格，避免和 CO2 标签粘在一起）
     if _last.get("co2") != co2:
-        o.prt(31, 52, 0, 0x1F, "%4d" % co2)
+        o.prt(31, 52, 0, C_BAR_TXT, "%4d" % co2)
         _last["co2"] = co2
 
     # 甲醛数值：内容或超标状态变了才重画
@@ -174,7 +186,7 @@ def draw(o, d, which, prefix="icon"):
         else:
             # 从反白状态恢复时必须把白底擦回底纹色，否则白块会留在屏上
             o.fill(96, 50, 26, 12, C_CO2)
-            o.prt(97, 52, 0, 0x1F, htxt)
+            o.prt(97, 52, 0, C_BAR_TXT, htxt)
         _last["hcho"] = (htxt, hbad)
 
 
