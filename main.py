@@ -256,8 +256,9 @@ def boot():
     # 开机图要读 12800 字节的 font/boot.bin，是开机路径里最大的一次性分配；
     # 内存紧的时候失败不该让整机起不来，所以包一层。
     try:
-        OLED.bmpf(64, 56, 80, 80, "font/boot.bin")
-        OLED.prtc(64, 108, 0, 0x808080, 0x000000, "v2.0")
+        # 只画 logo，不叠版本号 —— 版本信息在 README/firmware 里，屏上不必占位置。
+        # 没有下方文字后，logo 直接居中（64,64）才不显得偏上。
+        OLED.bmpf(64, 64, 80, 80, "font/boot.bin")
         print("[boot] logo ok")
     except MemoryError:
         OLED.prt(20, 60, 0, 0x808080, 0x000000, "no mem")

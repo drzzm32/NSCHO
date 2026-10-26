@@ -146,9 +146,10 @@ def draw(o, d, which, prefix="icon"):
     # ---- 状态带：只有轮换或等级变化才重画（灰底 + 标签 + 中文等级）
     if _last.get("band") != (which, ch):
         o.fill(0, 0, W, 16, C_BAND)
-        # 顶栏左端放品牌名 NSCHO（5 字 x 6px = 30px），轮换标签跟在其后
-        o.prt(3, 4, 0, 0x6B, "NSCHO")           # fg=11 稍暗，不抢主信息的注意力
-        o.prt(40, 4, 0, 0x6F, name)             # 6x8 标签，白色（bg=6 与灰带一致）
+        # 顶栏：轮换标签（PM2.5 等）靠左，品牌名 NSCHO 居中
+        # NSCHO = 5 字 x 6px = 30px，居中起点 (128-30)//2 = 49
+        o.prt(3, 4, 0, 0x6F, name)              # 6x8 标签，白色（bg=6 与灰带一致）
+        o.prt(49, 4, 0, 0x6B, "NSCHO")          # 品牌名居顶栏正中，fg=11 稍暗不抢注意力
         o.prt(112, 2, 2, 0x6F, ch)              # 12x12 中文等级，背景=6
         _last["band"] = (which, ch)
 
