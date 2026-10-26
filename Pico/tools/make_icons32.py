@@ -35,7 +35,7 @@ DST_SIZE = 32
 
 # 分档 -> 图标 id（语义从"呼吸顺畅"递进到"严重污染"）
 ICON_MAP = {
-    3004: "优",     # 肺
+    3100: "优",     # 花朵（本脚本绘制）
     3001: "良",     # 叶子
     3002: "轻",     # 气流
     1029: "中",     # 口罩
@@ -89,6 +89,44 @@ def pool_max(grid: list[list[int]]) -> list[list[int]]:
 
 
 # ---------------------------------------------------------------- 骷髅
+def draw_flower() -> list[list[int]]:
+    """程序化画 32x32 花朵：五片互不相连的花瓣 + 挖空花心 + 短茎。
+
+    选花朵而不是肺，是因为"优"这一档要表达"空气好、能放心呼吸"，
+    花朵的语义比内脏器官直观，而且和旁边"良=叶子"同属植物图形，视觉连贯。
+
+    参数是按"花瓣之间留天然空隙"选的：相邻花瓣中心距 = 2*8.2*sin(36) = 9.6，
+    花瓣直径 8.4，所以每两片之间空 1.2 像素 —— 不需要再另外挖缝。
+    挖缝那版试过，5 片会被切成交叉形，反而更像 clover。
+    """
+    g = [[0] * DST_SIZE for _ in range(DST_SIZE)]
+    INK = 15
+    BG = 0
+
+    cx, cy = 15.5, 13.0
+    for k in range(5):
+        a = math.radians(90 + k * 72)
+        px = cx + 8.2 * math.cos(a)
+        py = cy - 8.2 * math.sin(a)
+        for y in range(DST_SIZE):
+            for x in range(DST_SIZE):
+                if (x - px) ** 2 + (y - py) ** 2 <= 4.2 ** 2:
+                    g[y][x] = INK
+
+    # 花心挖空，和花瓣之间留出一圈缝
+    for y in range(DST_SIZE):
+        for x in range(DST_SIZE):
+            if (x - cx) ** 2 + (y - cy) ** 2 <= 2.8 ** 2:
+                g[y][x] = BG
+
+    # 短茎（花朵下方，露到画面底部）
+    for y in range(25, DST_SIZE):
+        for x in (15, 16):
+            g[y][x] = INK
+
+    return g
+
+
 def draw_skull() -> list[list[int]]:
     """程序化画一个 32x32 骷髅：头骨 + 两个眼窝 + 鼻腔 + 牙齿。"""
     g = [[0] * DST_SIZE for _ in range(DST_SIZE)]
@@ -147,6 +185,9 @@ def main() -> int:
         if icon_id == 9999:
             grid = draw_skull()
             how = "程序化绘制（骷髅）"
+        elif icon_id == 3100:
+            grid = draw_flower()
+            how = "程序化绘制（花朵）"
         elif src.exists():
             grid = pool_max(read64(src))
             how = "64->32 max 池化"
