@@ -34,14 +34,18 @@ SRC_SIZE = 64
 DST_SIZE = 32
 
 # 分档 -> 图标 id（语义从"呼吸顺畅"递进到"严重污染"）
-ICON_MAP = {
-    3100: "优",     # 花朵（本脚本绘制）
-    3001: "良",     # 叶子
-    3002: "轻",     # 气流
-    1029: "中",     # 口罩
-    9998: "重",     # 警告三角
-    9999: "严",     # 骷髅（本脚本绘制）
-}
+# 角标按**档位顺序编号**：0 = 最好（优），5 = 最差（严）。
+# 文件名就是档位序号，ui.py 的 GRADES 直接按下标取图，不再维护
+# "素材 id -> 语义" 的映射表（原来 1029/3001/3100/9998 这种 id 看不出含义）。
+ICONS = (
+    # (序号, 等级, 画法,     64x64 源图 id)
+    (0, "优", "flower", None),
+    (1, "良", "pool",   "3001"),   # 叶子
+    (2, "轻", "pool",   "3002"),   # 气流
+    (3, "中", "pool",   "1029"),   # 口罩
+    (4, "重", "pool",   "9998"),   # 警告三角
+    (5, "严", "skull",  None),     # 骷髅
+)
 
 
 # ---------------------------------------------------------------- 4 位灰度读写
@@ -178,25 +182,25 @@ def main() -> int:
     DST.mkdir(parents=True, exist_ok=True)
     made = []
 
-    for icon_id, grade in sorted(ICON_MAP.items()):
-        src = SRC / f"{icon_id}.bin"
-        # 程序化绘制的优先：9999 的 64x64 源图和 9998 完全一样，
-        # 用源图的话"严"和"重"在屏上是同一张图，区分不出来。
-        if icon_id == 9999:
-            grid = draw_skull()
-            how = "程序化绘制（骷髅）"
-        elif icon_id == 3100:
+    for idx, grade, how, src_id in ICONS:
+        if how == "flower":
             grid = draw_flower()
-            how = "程序化绘制（花朵）"
-        elif src.exists():
+            note = "程序化绘制（花朵）"
+        elif how == "skull":
+            grid = draw_skull()
+            note = "程序化绘制（骷髅）"
+        elif how == "pool":
+            src = SRC / f"{src_id}.bin"
+            if not src.exists():
+                print(f"  跳过 {idx}（{grade}）：源图 {src_id}.bin 缺失")
+                continue
             grid = pool_max(read64(src))
-            how = "64->32 max 池化"
+            note = f"64->32 max 池化（源图 {src_id}）"
         else:
-            print(f"  跳过 {icon_id}（{grade}）：源图缺失且无内置画法")
             continue
-        n = write32(grid, DST / f"{icon_id}.bin")
-        made.append((grade, icon_id, grid, n))
-        print(f"  {grade}  {icon_id}.bin  {n} 字节  ({how})")
+        n = write32(grid, DST / f"{idx}.bin")
+        made.append((grade, idx, grid, n))
+        print(f"  {idx}  {grade}  {idx}.bin  {n} 字节  ({note})")
 
     if a.preview:
         PREVIEW.mkdir(parents=True, exist_ok=True)
@@ -216,7 +220,7 @@ def main() -> int:
                 for x in range(DST_SIZE):
                     px[x, y] = int(grid[y][x] * 255 / 15)
             comp.paste(im.convert("RGB").resize((w, w), Image.NEAREST), (8 + i * (w + 8), 26))
-            d.text((8 + i * (w + 8) + w // 2 - 6, 8), grade, fill=(230, 230, 230))
+            d.text((8 + i * (w + 8) + 2, 8), str(icon_id), fill=(230, 230, 230))
         out = PREVIEW / "icons32.png"
         comp.save(out)
         print(f"  预览 -> {out}")
